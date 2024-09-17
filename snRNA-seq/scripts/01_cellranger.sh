@@ -28,16 +28,18 @@ cellranger count --id=idname \
 seqtk trimfq -e 2 samplename_S1_L001_R1_001.fastq.gz | gzip > samplename_S1_L001_R1_001.fastq.gz
 
 
+
 # CellBender
 
-# https://cellbender.readthedocs.io/en/latest/tutorial/index.html
+# only if needed https://cellbender.readthedocs.io/en/latest/tutorial/index.html
 
 # create a new conda environment:
 
 conda create -n cellbender python=3.7
 conda activate cellbender
 pip install cellbender
-Run cellbender in the "outs" folder:
+
+#Run cellbender in the "outs" folder:
 
 cellbender remove-background --cpu-threads 12 --input raw_feature_bc_matrix.h5 --output cb_raw_feature_bc_matrix.h5
 
