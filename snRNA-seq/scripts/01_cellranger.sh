@@ -26,3 +26,25 @@ cellranger count --id=idname \
 # Because samples were sequenced on different flowcells with different number of cycles, I might need to trim R1 in order to collapse originally different lengths of UMI (e.g. I need 16+12 bp in R1, but got back 26).
 
 seqtk trimfq -e 2 samplename_S1_L001_R1_001.fastq.gz | gzip > samplename_S1_L001_R1_001.fastq.gz
+
+
+# CellBender
+
+# https://cellbender.readthedocs.io/en/latest/tutorial/index.html
+
+# create a new conda environment:
+
+conda create -n cellbender python=3.7
+conda activate cellbender
+pip install cellbender
+Run cellbender in the "outs" folder:
+
+cellbender remove-background --cpu-threads 12 --input raw_feature_bc_matrix.h5 --output cb_raw_feature_bc_matrix.h5
+
+# Convert the ....filtered.h5 data so ou can upload them in Seurat
+
+conda create -n PyTables python=3.7
+
+conda activate PyTables
+pip install tables
+ptrepack --complevel 5 cb_raw_feature_bc_matrix_filtered.h5:/matrix cb_raw_feature_bc_matrix_filtered_seurat.h5:/matrix
