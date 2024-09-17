@@ -1,0 +1,33 @@
+---
+title: "ALS snRNAseq mouse: initial QC, data normalization, scaling, dimensional reductions, clustering cells, and data integration"
+author: "AnnaS"
+date: "Last edited `r format (Sys.time(), '%d %B %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    toc_depth: 4
+    fig_path: figure-html/
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+To retain the same randomness the set.seed function is used. 
+```{r setseed}
+set.seed(1)
+```
+
+# Load libraries and data
+
+```{r packages, message = FALSE}
+library(Seurat)
+library(SeuratObject)
+library(tidyverse)
+library(Matrix)
+library(cowplot) #needed for background_grid
+library(kableExtra)
+```
