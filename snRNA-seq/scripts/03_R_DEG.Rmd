@@ -1,1 +1,74 @@
+---
+title: "ALS snRNAseq mouse: data analysis after data integration"
+author: "AnnaS"
+date: "Last edited `r format (Sys.time(), '%d %B %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    toc_depth: 4
+    fig_path: figure-html/
+---
 
+The data integration is a computationally difficult process, therefore is the standard Seurat pipeline split into two parts.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+To retain the same randomness the set.seed function is used. 
+```{r setseed}
+set.seed(1)
+```
+
+# Load libraries and data
+
+```{r packages, message = FALSE}
+library(dplyr)
+library(Seurat)
+library(SeuratObject)
+library(tidyverse)
+library(Matrix)
+library(cowplot) #needed for background_grid
+library(kableExtra)
+library(patchwork)
+library(gridExtra)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(ggrepel) #volcano plots
+library(clusterProfiler) #DEG
+library(org.Mm.eg.db)
+```
+
+## Load the integrated seurat object
+
+Load the integrated RDS object and run `FindNeighbors()`, `FindClusters()`, and `RunUMAP()` functions on both CCA and Harmony integration.
+The `orig.reduction = "pca"` is replaced by `new.reduction = integrated.cca` and `new.reduction = harmony`.  
+
+```{r loading datasets, message=FALSE, warning=FALSE}
+
+# load the integrated seurat_object
+seurat_object <- readRDS("/path/to/seurat5_int1.rds")
+
+samples <- c("WT", "MyoDicre", "FusdNLS", "FusdNLS_MyoDicre")
+
+#check.seurat_object
+rownames(seurat_object)[1:5]
+
+#I need to run again FindNeighbors, FindClusters and RunUMAP on both integrations
+seurat_object <- FindNeighbors(seurat_object, reduction = "integrated.cca", dims = 1:20)
+seurat_object <- FindNeighbors(seurat_object, reduction = "harmony", dims = 1:20)
+
+seurat_object <- FindClusters(seurat_object, resolution = 0.5, cluster.name = "cca_clusters")
+seurat_object <- FindClusters(seurat_object, resolution = 0.5, cluster.name = "harmony_clusters")
+
+seurat_object <- RunUMAP(seurat_object, reduction = "integrated.cca", dims = 1:20, reduction.name = "umap.cca")
+seurat_object <- RunUMAP(seurat_object, reduction = "harmony", dims = 1:20, reduction.name = "umap.harmony")
+
+# you cannot set up "umap.cca" as default, you have to specify it when necessary
+
+VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0, group.by = "orig.ident") + background_grid(major = ("xy"), minor = ("y")) + theme(axis.text.x = element_blank()) + geom_hline(yintercept = c(650, 2800), color = "red", linewidth = 0.2)
+VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0, group.by = "orig.ident") + background_grid(major = ("xy"), minor = ("y"))
+```
