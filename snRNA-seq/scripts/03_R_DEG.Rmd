@@ -72,3 +72,450 @@ seurat_object <- RunUMAP(seurat_object, reduction = "harmony", dims = 1:20, redu
 VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0, group.by = "orig.ident") + background_grid(major = ("xy"), minor = ("y")) + theme(axis.text.x = element_blank()) + geom_hline(yintercept = c(650, 2800), color = "red", linewidth = 0.2)
 VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0, group.by = "orig.ident") + background_grid(major = ("xy"), minor = ("y"))
 ```
+
+
+# Nonlinear dimensional reduction (UMAP)  
+## Study the data after cca and harmony integration  
+
+```{r check RNA counts in UMAP diff int}
+# general UMAP
+umap.cca<- DimPlot(seurat_object, reduction = "umap.cca", label = TRUE) + NoLegend()
+umap.harmony<- DimPlot(seurat_object, reduction = "umap.harmony", label = TRUE) + NoLegend()
+
+# show orig.ident
+umap.cca.samples<- DimPlot(seurat_object, reduction = "umap.cca", group.by = "orig.ident") + NoLegend()
+umap.harmony.samples<- DimPlot(seurat_object, reduction = "umap.harmony", group.by = "orig.ident") + NoLegend()
+
+plot.umap.comb <- grid.arrange(umap.cca, umap.harmony, umap.cca.samples, umap.harmony.samples, ncol = 2)
+
+
+# orig.ident split
+# Split the UMAP by original identity, CCA integration
+umap.cca.split <- DimPlot(seurat_object, reduction = "umap.cca", label = TRUE, split.by = "orig.ident", pt.size = 0.5, ncol = 2) + ggtitle("snRNA-seq from skeletal muscle, CCA integration") 
+umap.cca.split
+
+# Split the UMAP by original identity, harmony integration
+umap.harmony.split <- DimPlot(seurat_object, reduction = "umap.harmony", label = TRUE, split.by = "orig.ident", pt.size = 0.5, ncol = 2) + ggtitle("snRNA-seq from skeletal muscle, harmony integration") 
+umap.harmony.split
+
+
+```
+## Study the feature counts (gene counts) and RNA counts in the UMAP  
+The UMAPs below show how many genes or RNA counts are per cell, unintegrated, cca integration, and harmony integration.  
+
+```{r UMAP, message=FALSE}
+
+#DimPlot from module scores section
+umap.dimplot.list <- list()
+for (i in unique(x=seurat_object$orig.ident)) {
+  umap.dimplot.list[[i]] <- DimPlot(seurat_object, cells.highlight = WhichCells(object = seurat_object, expression = orig.ident == i), cols.highlight = "turquoise4", pt.size = 0.5) + NoLegend() + ggtitle(i)
+}
+plot.dimplot.un.comb <- grid.arrange(grobs = umap.dimplot.list, ncol=2)
+
+umap.dimplot.list <- list()
+for (i in unique(x=seurat_object$orig.ident)) {
+  umap.dimplot.list[[i]] <- DimPlot(seurat_object, reduction = "umap.cca", cells.highlight = WhichCells(object = seurat_object, expression = orig.ident == i), cols.highlight = "turquoise4", pt.size = 0.5) + NoLegend() + ggtitle(i)
+}
+plot.dimplot.cca.comb <- grid.arrange(grobs = umap.dimplot.list, ncol=2)
+
+umap.dimplot.list <- list()
+for (i in unique(x=seurat_object$orig.ident)) {
+  umap.dimplot.list[[i]] <- DimPlot(seurat_object, reduction = "umap.harmony", cells.highlight = WhichCells(object = seurat_object, expression = orig.ident == i), cols.highlight = "turquoise4", pt.size = 0.5) + NoLegend() + ggtitle(i)
+}
+plot.dimplot.harmony.comb <- grid.arrange(grobs = umap.dimplot.list, ncol=2)
+
+# make a combined plot
+#features and counts unintegrated
+plot.features.un <- FeaturePlot(seurat_object, features = "nFeature_RNA", pt.size = 0.5)
+plot.counts.un <- FeaturePlot(seurat_object, features = "nCount_RNA", pt.size = 0.5)
+plot.features.cca <- FeaturePlot(seurat_object, features = "nFeature_RNA", pt.size = 0.5, reduction = "umap.cca")
+plot.features.harmony <- FeaturePlot(seurat_object, features = "nFeature_RNA", pt.size = 0.5, reduction = "umap.harmony")
+
+plot.counts.comb <- grid.arrange(plot.counts.un, plot.features.un, plot.features.cca, plot.features.harmony, ncol=2)
+
+```
+
+## UMAP with different resolutions and dimensions {.tabset .tabset-fade .tabset-pills}  
+
+```{r different dimensions and resolutions, message=FALSE}
+# For loop for different dimensionalities.
+dimensions <- c(10,20,30)
+resolutions <- c(0.25, 0.5, 0.75, 1)
+for (i in dimensions ) {
+  # Run FindNeighbors on data.pca with PCs 10,20,30)
+ data.dim <- FindNeighbors(seurat_object, dims = 1:i)
+  # Run FindClusters and see if the data get assigned to the correct Seurat Object.
+  data.dim <- FindClusters(data.dim, resolution = resolutions)
+ assign(paste0("data.",i), data.dim)
+}
+```
+
+#### 0.25 res  
+```{r UMAP 0.25 res, message=FALSE}
+data.30 <- RunUMAP(data.30, dims = 1:30)
+DimPlot(data.30, reduction = "umap.cca", group.by = "RNA_snn_res.0.25", label = TRUE)
+```
+
+#### 0.5 res  
+```{r UMAP 0.5 res}
+DimPlot(data.30, reduction = "umap.cca", group.by = "RNA_snn_res.0.5", label = TRUE)
+```
+
+#### 0.75 res  
+```{r UMAP 0.75 res}
+DimPlot(data.30, reduction = "umap.cca", group.by = "RNA_snn_res.0.75", label = TRUE)
+```
+
+#### 1 res  
+```{r UMAP 1 res}
+DimPlot(data.30, reduction = "umap.cca", group.by = "RNA_snn_res.1", label = TRUE)
+
+# clean the space
+rm(data.10, data.20, data.30, data.dim)
+```
+
+## How many cells are in each cluster?
+
+```{r nuclei per cluster, echo=TRUE, message=FALSE, warning=FALSE}
+# Export a table
+cell.counts.separate <- table(seurat_object@meta.data$cca_clusters, seurat_object@meta.data$orig.ident)
+print(cell.counts.separate)
+
+##Make a plot of data distribution by cluster
+cell.counts.separate.df <- as.data.frame(cell.counts.separate)
+ggplot(cell.counts.separate.df, aes(x = Var2, y=Freq, fill=Var2)) + geom_col() + facet_wrap(~Var1)
+
+
+##Make a plot showing stack columns of clusters per sample in percentages 
+cell.counts.cluster.totals <- cell.counts.separate.df %>%
+  group_by(Var2) %>%
+  summarise(TotalFreq = sum(Freq)) %>%
+  ungroup()
+
+# Merge the cluster totals back into the main data frame
+cell.counts.separate.df <- cell.counts.separate.df %>%
+  left_join(cell.counts.cluster.totals, by = c("Var2" = "Var2"))
+
+# Calculate percentages within each cluster
+cell.counts.separate.df <- cell.counts.separate.df %>%
+  mutate(Percentage = Freq / TotalFreq * 100)
+
+# Create the ggplot with percentages
+ggplot(cell.counts.separate.df, aes(x = Var2, y = Percentage, fill = Var1, group = Var2)) +
+  geom_bar(stat = "identity", position = "stack") +
+  geom_bar(stat = "identity", aes(x = Var2, y = Percentage, group = Var2), color = "black", fill = NA, position = "stack") +
+  labs(x = "Cluster ID", y = "Percentage", fill = "Identity") +
+  theme_minimal()
+
+
+## Create new table with percentages
+# You might need to change the number of dimensions
+cell.counts.df <- data.frame(cluster_n = 0:19)
+
+# Create a loop to calculate percentages for each identity
+for (i in samples) {
+  cluster_counts <- cell.counts.separate[, i]
+  col_name <- paste(i, "perc", sep = ".")
+  cell.counts.df <- cell.counts.df %>%
+    mutate(!!col_name := cluster_counts * 100 / sum(cluster_counts))
+}
+
+# Remove the original counts columns, make cluster_n column rownames, round the values
+cell.counts.df <- cell.counts.df %>%
+  dplyr::select(-one_of(samples))
+
+rownames(cell.counts.df) <- cell.counts.df$cluster_n
+cell.counts.df <- cell.counts.df[,-1]
+round(cell.counts.df)
+```
+
+
+## Visualize features and nCounts per cluster  
+Data are already filtered according to the section 2.4 Filter the data.  
+```{r feature and nCount per cluster, message=FALSE, warning=FALSE, fig.width=9}
+VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0, split.by = "orig.ident") + background_grid(major = ("xy"), minor = ("y"))
+VlnPlot(seurat_object, features = c("nCount_RNA"), ncol = 1, pt.size = 0, split.by = "orig.ident") + background_grid(major = ("xy"), minor = ("y"))
+```
+
+
+# Cluster biomarkers 
+
+## Find differentially expressed features
+
+Seurat can help you find markers that define clusters via differential
+expression. By default, it identifies positive and negative markers of a
+single cluster (specified in ident.1), compared to all other cells.
+FindAllMarkers() automates this process for all clusters, but you can
+also test groups of clusters vs. each other, or against all cells.  
+
+There are three main functions:  
+
+FindMarkers: a versatile tool for identifying marker genes that are differentially expressed between specified cell clusters or groups. It employs a Wilcoxon rank-sum test by default and allows users to customize parameters for significance and log-fold change thresholds. This function is suitable for a wide range of differential expression analysis scenarios in single-cell RNA-seq data, mainly for comparing two groups within one dataset.  
+
+FindAllMarkers: Similarly, it identifies marker genes across all clusters or groups in a Seurat object. It's useful for a comprehensive exploration of marker genes in the entire dataset. Users can specify the method (e.g., Wilcoxon rank-sum test or t-test) and customize parameters for statistical significance.  
+
+FindConservedMarkers: designed to identify markers that are conserved across different datasets or conditions. It helps users discover genes consistently differentially expressed across multiple experimental conditions. This function requires the definition of grouping variables to compare different conditions or datasets.  
+
+```{r diff ex markers, message=FALSE}
+# find markers for every cluster compared to all remaining cells, takes time
+
+# rejoin the layers of integrated data - recreates the original `counts` and `data` layers. Possible to split the data for further integrative analysis
+seurat_object <- JoinLayers(seurat_object)
+seurat_object
+
+# min.pct: default is 0.1, you could use 0.5 which is more stringent and will thus speed up the process
+# only.pos: choose only upregulated markers
+# test.use: wilcox by default, other: poisson, negative binomial, t-test, DESeq2
+seurat.markers <- FindAllMarkers(seurat_object, only.pos = TRUE, min.pct = 0.25, logfc.threshold = 0.25)
+seurat.markers %>%
+  group_by(cluster) %>%
+  slice_max(n = 2, order_by = avg_log2FC)
+
+head(seurat.markers)
+```
+
+## Visualization of marker expression to identify NMJ cluster
+
+VlnPlot shows expression probability distributions across clusters and FeaturePlot visualizes feature expression on a tSNE or PCA plot. Other options are RidgePlot(), CellScatter(), and DotPlot()...
+
+```{r marker genes, message=FALSE, warning=FALSE}
+
+#Or plot raw counts as well
+VlnPlot(seurat_object, features = c("Chrna1", "Chrnd", "Chrne", "Mecp2", "Ache", "Fus", "Etv5"), log = TRUE, slot = "counts")
+
+VlnPlot(seurat_object, features = c("Chrna1", "Chrnd", "Chrne", "Mecp2", "Ache", "Fus", "Etv5"), stack = T, flip = T, split.by = "orig.ident")
+
+FeaturePlot(seurat_object, features = c("Chrna1", "Chrnd", "Chrne", "Mecp2", "Ache", "Fus", "Etv5", "Ano4", "Col19a1"), min.cutoff = "q10", reduction = "umap.cca")
+
+VlnPlot(seurat_object, features = c("Fus"), slot = "counts", log = TRUE)
+VlnPlot(seurat_object, features = c("Fus"), slot = "counts", log = TRUE, split.by = "orig.ident")
+
+plot.vln.un <- VlnPlot(seurat_object, features = c("Fus"), pt.size = 0, group.by = "unintegrated_clusters") + NoLegend() + ggtitle("Fus - Unintegrated")
+plot.vln.cca <- VlnPlot(seurat_object, features = c("Fus"), pt.size = 0, group.by = "cca_clusters") + NoLegend() + ggtitle("Fus - CCA")
+plot.vln.harmony <- VlnPlot(seurat_object, features = c("Fus"), pt.size = 0, group.by = "harmony_clusters") + NoLegend() + ggtitle("Fus - Harmony")
+plot.vln.un | plot.vln.cca | plot.vln.harmony
+
+
+#instead of RNA_snn_res.0.5 is now cca_clusters
+Idents(seurat_object) <- seurat_object$cca_clusters
+VlnPlot(seurat_object, features = c("Fus"), slot = "counts", log = TRUE, split.by = "orig.ident", idents = 16) + ggtitle("Expression of Fus in cluster 16")
+
+#Dos Santos, Titin + myonuclei identification, no specific cluster here
+#VlnPlot(seurat_object, features = c("Runx1", "Dysf", "Ehd4", "Flnc", "Myh9"), slot = "counts", log = TRUE)
+
+# stack plot
+VlnPlot(seurat_object,features=c("Musk", "Chrne", "Ache", "Fus", "Etv5"), pt.size = 0, stack=T, flip=T)
+
+DimPlot(seurat_object, reduction = "umap.cca", label = TRUE) + NoLegend()
+```
+
+## Find conserved markers
+
+Find conserved markers for a specific cluster (2 clusters by default), cluster 16 in our case.
+This function is used to find markers that are conserved across different groups or conditions within your single-cell RNA-seq data.  We use it to find genes that are consistently expressed across different conditions or subsets. Typically, it is used to identify genes that are specifically enriched or depleted in a particular cluster, helping to characterize the unique features of that cluster.
+
+```{r 16 conservative markers, message=FALSE}
+#find conserved markers, grouping.var = "" condition can vary
+#this takes a lot of time
+
+# Create a grouping variable based on subsets
+seurat_object$subset_group <- factor(
+  ifelse(seurat_object$orig.ident %in% c("FusdNLS", "FusdNLS_MyoDicre", "MyoDicre", "WT"), "conditions", "OtherSubsets")
+)
+```
+
+
+## Find markers of cluster 16
+
+In the code below, the logfc parameter sets a threshold for the log-fold change between the cluster of interest and all other cells. It specifies that only genes with a logFC greater than or equal to 0.25 will be considered as potential markers.
+The test.use parameter specifies the statistical test used to identify markers. In this case, it's the ROC (Receiver Operating Characteristic) test. The ROC test is commonly used in single-cell RNA-seq analysis to assess the discriminatory power of a gene in distinguishing one cluster from others. The ROC test returns the 'classification power' for any individual marker (ranging from 0 -random, to 1 - perfect).
+The only.pos parameter specifies that it will only include genes that are upregulated in cluster 16 compared to other clusters.
+
+```{r cl16, results='asis'}
+cluster16.markers <- FindMarkers(seurat_object, ident.1 = "16", logfc.threshold = 0.25, test.use = "roc", only.pos = TRUE)
+
+print(kable(cluster16.markers, caption = paste0("<strong>Markers of cluster 16</strong>")) %>%
+kable_styling(fixed_thead = T, bootstrap_options = c("striped"," hover")) %>%
+scroll_box(width = "750px", height = "350px")) %>%
+cat("\n")
+```
+
+
+
+# Study the gene expression
+
+## Find DEG  {.tabset .tabset-fade .tabset-pills}
+
+The FindMarkers function finds differential expressed genes (DEG) and in this instance of a cluster. 
+Per gene there are columns containing its p-value, average log2FC (), pct.1, pct2, p-value adjusted, cluster number and gene name. The average log2FC is the log fold-change of the average expression between the two groups. The positive values indicate that a feature is more highly expressed in the first group, i.e. ident.1. The reference/control is in ident.2. If ident.2 is left blank, the FindMarkers function will compare ident.1 to all other groups.  
+pct.1 is the percentage of nuclei in the cluster where the gene is detected. pct.2 is the percentage of nuclei on average in all the other clusters where the gene is detected. P-value adjusted is the p-value based on bonferroni correction using all genes in the dataset. <br>
+
+### Cluster 16 between FusdNLS and WT
+This is an example code to study the DEG in certain cluster (or a group of clusters: subset.ident = c(0, 1, 2, 3, 4) for all the body myonuclei) between different samples.
+```{r FindMarkers of cluster 16.1, results = "asis"}
+# Find differential expressed genes (DEG) for cluster 16 between samples
+deg.cluster16.1 <- FindMarkers(seurat_object, ident.1 = "FusdNLS", ident.2 = "WT", group.by = "orig.ident", subset.ident = 16, verbose = TRUE, logfc.threshold = 0.25)
+
+# Create a volcano plot
+deg.volcano.16.1 <- as.data.frame(deg.cluster16.1)  
+deg.volcano.16.1$diffexpressed <- "NO"
+deg.volcano.16.1$diffexpressed[deg.volcano.16.1$avg_log2FC > 0.5 & deg.volcano.16.1$p_val_adj < 0.05] <- "UP"
+deg.volcano.16.1$diffexpressed[deg.volcano.16.1$avg_log2FC < -0.5 & deg.volcano.16.1$p_val_adj < 0.05] <- "DOWN"
+
+ggplot(deg.volcano.16.1, aes(x=avg_log2FC, y=-log10(p_val_adj), color=diffexpressed, label=rownames(deg.volcano.16.1))) + 
+  geom_point() + 
+  geom_label_repel(data = subset(deg.volcano.16.1), aes(label=rownames(deg.volcano.16.1)) , max.overlaps = 20) + 
+  geom_vline(xintercept = c(-0.6, 0.6), col="blue") + 
+  geom_hline(yintercept = -log10(0.05), col="blue") + 
+  scale_color_manual(values=c("maroon3", "navyblue", "seagreen2")) + 
+  theme_minimal()
+
+
+# Filter for significant DEG, genes with a p-value adjusted below 0.05"
+  deg.filt16.1<-deg.cluster16.1 %>%
+            filter(p_val_adj < 0.05)
+
+  print(kable(deg.filt16.1, caption = paste0("<strong>DEG between FusdNLS and WT in cluster 16</strong>")) %>%
+  kable_styling(fixed_thead = T, bootstrap_options = c("striped"," hover")) %>%
+  scroll_box(width = "750px", height = "350px")) %>%
+  cat("\n")
+
+# GO analysis
+deg.1 <- rownames(deg.filt16.1)
+GOcl16.1 <- enrichGO(
+  gene = deg.1,
+  OrgDb = org.Mm.eg.db,
+  keyType = "SYMBOL",
+  ont = "BP"
+  )
+dotplot(GOcl16.1, showCategory = 10, title = "DEG FusdNLSxWT")
+
+#up/down plot
+deg.16.1up <- deg.volcano.16.1 %>% filter(diffexpressed == "UP")
+deg.16.1down <- deg.volcano.16.1 %>% filter(diffexpressed == "DOWN")
+deg.16.1comparelist <- list(rownames(deg.16.1up), rownames(deg.16.1down))
+names(deg.16.1comparelist)<-c("upregulated","downregulated") 
+cclust<-compareCluster(geneCluster = deg.16.1comparelist, 
+               fun = enrichGO,
+               OrgDb= org.Mm.eg.db,
+               keyType = "SYMBOL",
+               ont= "BP",
+               universe=deg.cluster16.1)
+dotplot(cclust, showCategory = 6, font.size = 10, title = "DEG FusdNLSxWT")
+```
+
+
+
+### Find DEG between FusdNLS and WT samples
+
+```{r Janou loop, results = "asis"}
+# # Changed the for loop from Janou 
+# # Set output 
+# output <- c("output/")
+# # Check if directory does not exists and recreates the directory 
+# for (i in output) {
+#   if (!dir.exists(i)) {
+#     dir.create(i, recursive = T)
+#   }
+# }
+# 
+# # Assign the column containing the cluster numbering to nclust
+# nclust<- paste0("RNA_snn_res.", 0.5)
+# 
+# # Sort the based on the nclust, remove duplicates (which is not expected) and assign to clusters 
+# clusters <- sort(unique(seurat_object@meta.data[[nclust]]))
+# Idents(seurat_object) <-seurat_object@meta.data[[nclust]]
+# 
+# # Use RNA assay from the Seurat Object
+# DefaultAssay(seurat_object) <- "RNA"
+# 
+# # For loop for finding the differential expressed genes (DEG) between the two samples within each cluster
+# for(i in clusters){
+#   testdat <- subset(seurat_object, idents = i)
+#   tab <- table(testdat$orig.ident)
+#   if (tab[1]<3 | tab[2]<3 | length(tab)<2){
+#     next
+#   }
+#   deg.cluster <- FindMarkers(seurat_object, ident.1 = "FusdNLS", ident.2 = "WT", verbose = TRUE, group.by="orig.ident", subset.ident = i, logfc.threshold = 0.25)
+# # Filter for significant DEG, genes with a p-value adjusted below 0.05
+#   deg.filt<-deg.cluster %>%
+#             filter(p_val_adj < 0.05)
+#   # Get the names of the DEGs
+#   deg.names <- rownames(deg.filt)
+#    assign(paste0("deg.names",i), deg.names)
+#   
+#   # Print a table showing DEG and statistics as a scrollbox   
+#   print(knitr::kable(deg.filt, caption = paste0("<strong> FusdNLS and WT DEG in cluster ",i,"</strong>")) %>%
+#   kable_styling(fixed_thead = T, bootstrap_options = c("striped"," hover")) %>%
+#   scroll_box(width = "750px", height = "350px"))
+#   cat("\n")
+#   # Write a csv file to save locally
+# # write.csv(deg.cluster,paste0(output,"PC_30_DEG_nclust",length(levels(seurat_object@meta.data[ ,nclust])), "_cluster_",i, ".csv"))
+# }
+```
+
+
+
+
+
+# Assign cell identities to clusters {.tabset .tabset-fade .tabset-pills}
+
+Looking for marker genes in clusters according to Petrany (and Dos Santos) paper. 
+
+AC - adipocytes: Fabp4, Adipor2
+EC - endothelial cells: Pecam1, (Eng, Flt1, Nrp1)
+FAPS - fibro-adipogenic progenitors: Dcn
+M - Myonuclei, all myonuclei: Ttn, Nos1, Enah, Ckm; Type IIb myonuclei: Myh4; Type IIx myonuclei: Myh1
+MTJ - myotendinous junction: Adamts20, Col22a1, (Col6a3, Col12a1, Col15a1, Col16a1, Fbn1, Tnc)  
+MuSC - skeletal muscle stem cells (satellite cells): Pax7, Tcf4, Mef2a
+NMJ - neuromuscular junction: Adamts20, Col22a1, (Col6a3, Col12a1, Col15a1, Col16a1, Fbn1, Tnc)  
+PC - Pericytes: Pdgfrb, Rgs5, Des
+TC - Tenocytes: Mkx, (Col1a1, Col3a1, Dcn, Col12a1)
+B/T cells: ptprc
+Smooth muscle cells: Myh11; (Cald1, Mylk)
+
+## Plot with assigned Ids
+```{r new ids plot, fig.cap="UMAP with assigned identities based on the marker genes in the other tabs", message=FALSE}
+#replace the labels with true vectors corresponding the 0-14 order
+new.cluster.ids <- c("0_Type IIb M", "1_Type IIx M","2_Type IIx M", "3_Type IIx M", "4_Type IIb M", "5_FAPS", "6_AC", "7_All M", "8_PC+Smooth MC", "9_MuSC", "10_MTJ", "11_AC", "12_EC+AC", "13_Immune cells", "14_FAPS", "15_FAPS+TC", "16_NMJ nuclei", "17_PC", "18_FAPS", "19_PC+AC+EC")
+names(new.cluster.ids) <- levels(seurat_object)
+seurat_object <- RenameIdents(seurat_object, new.cluster.ids)
+DimPlot(seurat_object, reduction = "umap.cca", label = TRUE, pt.size = 0.5) + NoLegend()
+
+umap.new.ids <- DimPlot(seurat_object, reduction = "umap.cca", label = TRUE, pt.size = 0.5)
+umap.new.ids
+png("umap.new.ids.jpg", width = 1200, height=800)
+plot(umap.new.ids)
+dev.off()
+```
+## NMJ
+Example code to run further for all the clusters
+```{r NMJ, fig.cap = "Violin plots showing gene expression of the marker gene(s). The y-axis shows expression level as probability distribution across clusters."}
+
+#Looking for marker genes in clusters:
+
+#NMJ: Adamts20, Col22a1, (Col6a3, Col12a1, Col15a1, Col16a1, Fbn1, Tnc)
+mg.NMJ <- VlnPlot(seurat_object,features=c("Fus", "Etv5", "Ache", "Chrne"), pt.size = 0, stack=T, flip=T)
+mg.NMJ + ggtitle("NMJ")
+
+#featureplot
+mg.NMJ.f.f <- FeaturePlot(seurat_object, features = "Fus", reduction = "umap.cca")
+mg.NMJ.f.e <- FeaturePlot(seurat_object, features = "Etv5", reduction = "umap.cca")
+mg.NMJ.f.a <- FeaturePlot(seurat_object, features = "Ache", reduction = "umap.cca")
+mg.NMJ.f.c <- FeaturePlot(seurat_object, features = "Chrne", reduction = "umap.cca")
+mg.NMJ.comb <- grid.arrange(mg.NMJ.f.f, mg.NMJ.f.e, mg.NMJ.f.a, mg.NMJ.f.c, ncol = 2)
+mg.NMJ.comb2 <- grid.arrange(mg.NMJ.f.f, mg.NMJ.f.e, ncol = 2)
+```
+
+
+
+# Save the seurat_object
+```{r save the object}
+saveRDS(seurat_object, file = "C:/Users/spare/Documents/Big data/seurat5_int2.rds")
+```
+
+
+# Session info
+```{r session info}
+sessionInfo()
+```
