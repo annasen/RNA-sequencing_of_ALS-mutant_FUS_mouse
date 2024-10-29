@@ -24,6 +24,7 @@ cellranger count --id=idname \
 # seqtk
 
 # Because samples were sequenced on different flowcells with different number of cycles, I might need to trim R1 in order to collapse originally different lengths of UMI (e.g. I need 16+12 bp in R1, but got back 26).
+# whether this approach is appropriate and does not collapse different UMIs is debatable, one can study more with "hamming distance"
 
 seqtk trimfq -e 2 samplename_S1_L001_R1_001.fastq.gz | gzip > samplename_S1_L001_R1_001.fastq.gz
 
