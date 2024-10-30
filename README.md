@@ -1,6 +1,6 @@
 ## RNA sequencing of ALS-mutant FUS mouse
 
-In collaboration with the Storkebaum lab, mRNA from neuromuscular junction (NMJ) was studied. 
+In collaboration with the Storkebaum lab, mRNA from neuromuscular junction was studied. 
 ![image](https://github.com/user-attachments/assets/451d6623-74af-45c3-9cf4-c7ddd7d34b38)
 
 In this project, the muscle nuclei were studied in three independent experiments:
