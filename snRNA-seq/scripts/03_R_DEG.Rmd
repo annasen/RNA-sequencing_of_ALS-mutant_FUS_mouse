@@ -511,7 +511,7 @@ mg.NMJ.comb2 <- grid.arrange(mg.NMJ.f.f, mg.NMJ.f.e, ncol = 2)
 
 # Save the seurat_object
 ```{r save the object}
-saveRDS(seurat_object, file = "C:/Users/spare/Documents/Big data/seurat5_int2.rds")
+saveRDS(seurat_object, file = "seurat5_int2.rds")
 ```
 
 
