@@ -330,9 +330,10 @@ ms.tmp16
 
 
   
-## Transcription factor activity CollecTRI  
+## Transcription factor activity inference with CollecTRI  
 The CollecTRI-derived regulons contain signed transcription factor (TF) - target gene interactions compiled from 12 different resources. This collection provides an increased coverage of transcription factors and was benchmarked against other known GRNs, showing a superior performance in identifying perturbed TFs based on gene expression data using the knockTF data sets.
 I tried univariate linear model (ulm) and multivariate linear model (mlm). 
+Tutorial example here <https://saezlab.github.io/decoupleR/articles/tf_sc.html>
 ```{r collectri, warning=FALSE}
 library(decoupleR)
 library(OmnipathR)
