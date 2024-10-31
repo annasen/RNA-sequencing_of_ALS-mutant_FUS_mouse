@@ -300,6 +300,15 @@ VlnPlot(seurat_object, features = c("Fus"), slot = "counts", log = TRUE, split.b
 VlnPlot(seurat_object,features=c("Musk", "Chrne", "Ache", "Fus", "Etv5"), pt.size = 0, stack=T, flip=T)
 
 DimPlot(seurat_object, reduction = "umap.cca", label = TRUE) + NoLegend()
+
+#assign new idents and then split the object - or not?
+seurat.subset <- SplitObject(seurat_object, split.by = "orig.ident")
+
+DotPlot(seurat.subset$WT, features = c("Fus", "Etv5", "Musk", "Ache", "Chrne")) + RotatedAxis() + scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))) + ggtitle(paste("WT")) + NoLegend()
+DotPlot(seurat.subset$FusdNLS, features = c("Fus", "Etv5", "Musk", "Ache", "Chrne")) + RotatedAxis() + scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))) + ggtitle(paste("FusdNLS")) + NoLegend()
+DotPlot(seurat.subset$MyoDicre, features = c("Fus", "Etv5", "Musk", "Ache", "Chrne")) + RotatedAxis() + scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))) + ggtitle(paste("MyoDicre")) + NoLegend()
+DotPlot(seurat.subset$FusdNLS_MyoDicre, features = c("Fus", "Etv5", "Musk", "Ache", "Chrne")) + RotatedAxis() + scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))) + ggtitle(paste("FusdNLS_MyoDicre")) + NoLegend()
+rm(seurat.subset)
 ```
 
 ## Find conserved markers
