@@ -1,0 +1,703 @@
+---
+title: "ALS snRNAseq mouse: final data analysis with assigned clusters to analyze module scores and TF activity"
+author: "AnnaS"
+date: "Last edited `r format (Sys.time(), '%d %B %Y')`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: hide
+    toc_depth: 4
+    fig_path: figure-html/
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+To retain the same randomness the set.seed function is used. 
+```{r setseed}
+set.seed(1)
+```
+
+# Load libraries and data
+
+```{r packages, message = FALSE}
+library(dplyr)
+library(Seurat)
+library(SeuratObject)
+library(tidyverse)
+library(Matrix)
+library(cowplot) #needed for background_grid
+library(kableExtra)
+library(patchwork)
+library(gridExtra)
+library(RColorBrewer) #Module scores feature plots with color gradient
+library(ComplexHeatmap) # but I need this
+library(circlize) # heatmaps by Rebecca
+library(clusterProfiler) #DEG
+library(ggrepel) # volcano plots
+
+# might not be all, check these
+# library(plotly)
+# library(sctransform)
+# library(scDblFinder)
+# library(SingleCellExperiment)
+```
+
+## Load the seurat object including all slot
+
+Load the integrated RDS object including all slots.
+
+```{r loading datasets, message=FALSE, warning=FALSE}
+
+# load the integrated seurat_object
+seurat_object <- readRDS("/path/to/seurat5_int2.rds")
+seurat.markers <- readRDS("../seurat.markers.rds")
+
+samples <- c("WT", "MyoDicre", "FusdNLS", "FusdNLS_MyoDicre")
+
+#check.seurat_object
+rownames(seurat_object)[1:5]
+
+# you cannot set up "umap.cca" as default, you have to specify it when necessary
+
+```
+
+
+
+# Study the gene expression
+
+## Fus Module scores {.tabset .tabset-fade .tabset-pills}
+
+I loaded a list of Fus targets from Salim and analyzed them using Seurat. The module scores are stored now in the metadata of the seurat_object.
+These module scores represent the activity (expression level) of the Fus target genes in each cell. The scores quantify the degree to which these genes are collectively expressed in each cell. It is a difference between the average expression level of each hene set and random control genes. A positive score would suggest that this module of genes is expressed in a particular cell more highly than would be expected, given the average expression of this module across the population.  
+
+
+```{r module scores, message=FALSE, warning=FALSE}
+
+#load the data and choose only the gene symbols, filter genes that are already included in seurat_object
+ms.fus.targets <- read.csv("../FUStargets.csv", sep = ";")
+ms.fus.targets <- ms.fus.targets$Gene.Symbol
+ms.fus.targets.filt <- intersect(ms.fus.targets, rownames(seurat_object))
+
+
+# run the module score function (the features need to be listed), it will add many slots to seurat_object@meta.data. Already done
+seurat_object <- AddModuleScore(seurat_object, features = list(ms.fus.targets.filt), name = "FUS.targets")
+
+```
+
+### MS Feature Plot
+```{r ms feature plot all, message=FALSE, fig.cap = "Feature plot showing the gradient of module scores of all four samples."}
+
+#FeaturePlot
+
+FeaturePlot(seurat_object, features = "FUS.targets1", label = TRUE, repel = TRUE, reduction = "umap.cca") + scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))) 
+
+```
+### MS Feature Plot per sample
+```{r ms feature plot per sample, message=FALSE, fig.cap = "Feature plots showing the gradient of module scores per sample."}
+
+#loop for combined plot FeaturePlots split.by = "orig.ident", there is already stored a vector of characters "samples"
+seurat.subset <- SplitObject(seurat_object, split.by = "orig.ident")
+
+
+ms.fp.list <- list()
+for (i in names(seurat.subset)) {
+ ms.fp.loop <- FeaturePlot(seurat.subset[[i]], reduction = "umap.cca", features = "FUS.targets1", label = FALSE, repel = TRUE) + scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))) + ggtitle(paste(i))
+ ms.fp.list[[i]] <- ms.fp.loop
+}
+
+grid.arrange(grobs = ms.fp.list, ncol=2)
+
+
+```
+### MS Violin Plot
+```{r msviolin plot all, fig.cap = "Stacked violin plot showing the module scores per cluster and expression of Fus gene."}
+
+#violin plot, stacked and split.by = "orig.ident"
+VlnPlot(seurat_object, features = c("FUS.targets1", "Fus"), flip = TRUE, pt.size = 0, stack = TRUE)
+VlnPlot(seurat_object, features = "FUS.targets1", flip = TRUE, pt.size = 0, split.by = "orig.ident")
+```
+### MS Ridge Plot
+```{r ms ridge plot all}
+
+RidgePlot(seurat_object, features = "FUS.targets1") + ggtitle("RidgePlot of module scores (FUS targets) per cluster") + theme(legend.position = "none")
+```
+
+### Ridge Plot FUS per genotype
+```{r ms ridge plot per cluster per genotype, message=FALSE, fig.width=10, fig.height=8, fig.cap = "Ridge plot showing distribution of FUS module scores per cluster."}
+plot.ridge.wt <- RidgePlot(seurat.subset$WT, features = "FUS.targets1") + ggtitle("WT") + theme(legend.position = "none")
+
+plot.ridge.myo <- RidgePlot(seurat.subset$MyoDicre, features = "FUS.targets1") + ggtitle("MyoDicre") + theme(legend.position = "none")
+
+plot.ridge.fus <- RidgePlot(seurat.subset$FusdNLS, features = "FUS.targets1") + ggtitle("FusdNLS") + theme(legend.position = "none")
+
+plot.ridge.fusmyo <- RidgePlot(seurat.subset$FusdNLS_MyoDicre, features = "FUS.targets1") + ggtitle("FusdNLS_MyoDicre") + theme(legend.position = "none")
+
+grid.arrange(plot.ridge.wt, plot.ridge.fus, plot.ridge.myo, plot.ridge.fusmyo, ncol=2)
+
+rm(seurat.subset)
+```
+### Ridge Plot cl 0 - example
+```{r ms ridge plot cl0, fig.cap = "Ridge plot showing distribution of module scores of certain cluster."}
+# before nclust<- paste0("RNA_snn_res.", 0.5)
+nclust<- paste0("cca_clusters")
+
+# Sort the based on the nclust, remove duplicates (which is not expected) and assign to clusters 
+clusters <- sort(unique(seurat_object@meta.data[[nclust]]))
+Idents(seurat_object) <-seurat_object@meta.data[[nclust]]
+
+ms.plot.list <- list()
+
+for(i in clusters){
+  seurat.subset.clusters <- subset(seurat_object, idents = i)
+  plot.ridge.loop <- RidgePlot(seurat.subset.clusters, features = "FUS.targets1", group.by = "orig.ident") + ggtitle(i) + theme(legend.position = "none")
+  ms.plot.list[[as.character(i)]] <- plot.ridge.loop
+}  
+print(ms.plot.list[["0"]])
+```
+
+
+### Ridge Plot cl 16  
+```{r ms ridge plot cl 16, fig.cap = "Ridge plot showing distribution of module scores of certain cluster."}
+print(ms.plot.list[["16"]])
+```
+### Histograms of cluster 16   
+```{r hist cl 16}
+
+#lets export the data for histogram, originally RNA_snn_res.0.5 instead of cca_clusters
+ms.seurat.hist.data <- seurat_object[[c("orig.ident", "cca_clusters", "FUS.targets1")]]
+ms.hist.plot.list <- list()
+
+#make a loop
+for (i in samples) {
+  ms.plot.data <- ms.seurat.hist.data %>%
+    filter(orig.ident == i, cca_clusters == 16)
+  ms.hist.plot <- ggplot(ms.plot.data, aes(x=FUS.targets1)) + geom_histogram(binwidth = 0.005, fill = "darkblue", color = "lightblue") +
+    labs(title = paste0("MS of cl 16 in ", i)) + coord_cartesian(ylim = c(0,12))
+  ms.hist.plot.list[[i]] <- ms.hist.plot
+}
+plot.ms.hist <- do.call(gridExtra::grid.arrange, ms.hist.plot.list)
+plot.ms.hist
+
+
+```
+
+
+## Erm Module scores {.tabset .tabset-fade .tabset-pills}  
+
+I loaded a list of Erm targets from Hippenmeyer, 2007, Neuron paper.
+```{r erm module scores, message=FALSE, warning=FALSE}
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+
+#load the data and choose only the gene symbols, filter genes that are already included in seurat_object
+ms.erm.targets <- read.csv("../Subsynaptically_enriched_genes_in Erm_1.5fold-difference.csv", sep = ";")
+ms.erm.targets.filt <- ms.erm.targets$Description
+
+#change the full gene name to gene symbol
+
+#does not work, probably I don't have valid keytypes
+ms.erm.gene.symbols <- mapIds(
+  org.Mm.eg.db,
+  keys = ms.erm.targets.filt,
+  keytype = "GENENAME",
+  column = "SYMBOL"
+)
+ms.erm.gene.symbols
+
+ms.erm.intersect <- intersect(ms.erm.gene.symbols, rownames(seurat_object))
+ms.erm.intersect
+
+#plenty NA values, might need to rename the genes so it can find them
+#ms.erm.gene.symbols
+
+
+#run the module score function (the features need to be listed), it will add many slots to seurat_object@meta.data
+seurat_object <- AddModuleScore(seurat_object, features = list(ms.erm.gene.symbols), name = "ERM.targets")
+```
+
+
+### MS Feature Plot
+```{r ms erm feature plot all, message=FALSE, fig.cap = "Feature plot showing the gradient of module scores of all four samples."}
+
+#FeaturePlot
+
+FeaturePlot(seurat_object, features = "ERM.targets1", label = TRUE, repel = TRUE, reduction = "umap.cca") + scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))) 
+```
+
+### MS Feature Plot per sample
+```{r ms erm feature plot per sample, warning=FALSE, message=FALSE, fig.cap = "Feature plots showing the gradient of module scores per sample."}
+
+#loop for combined plot FeaturePlots split.by = "orig.ident", there is already stored a vector of characters "samples"
+seurat.subset <- SplitObject(seurat_object, split.by = "orig.ident") # already established but need to add slot ERM.targets
+ms.fp.list <- list()
+for (i in names(seurat.subset)) {
+ ms.fp.loop <- FeaturePlot(seurat.subset[[i]], reduction = "umap.cca", features = "ERM.targets1", label = FALSE, repel = TRUE) + scale_color_gradientn(colours = rev(brewer.pal(n = 11, name = "RdBu"))) + ggtitle(paste(i))
+ ms.fp.list[[i]] <- ms.fp.loop
+}
+CombinePlots(plots = ms.fp.list, ncol = 2)
+
+```
+
+### Ridge Plot per genotype
+```{r ms erm ridge plot per genotype, message=FALSE, fig.width=10, fig.height=8, fig.cap = "Ridge plot showing distribution of module scores per cluster."}
+
+plot.ridge.erm.wt <- RidgePlot(seurat.subset$WT, features = "ERM.targets1") + ggtitle("WT") + theme(legend.position = "none")
+
+plot.ridge.erm.myo <- RidgePlot(seurat.subset$MyoDicre, features = "ERM.targets1") + ggtitle("MyoDicre") + theme(legend.position = "none")
+
+plot.ridge.erm.fus <- RidgePlot(seurat.subset$FusdNLS, features = "ERM.targets1") + ggtitle("FusdNLS") + theme(legend.position = "none")
+
+plot.ridge.erm.fusmyo <- RidgePlot(seurat.subset$FusdNLS_MyoDicre, features = "ERM.targets1") + ggtitle("FusdNLS_MyoDicre") + theme(legend.position = "none")
+
+plot.ridge.erm.fus
+plot.ridge.erm.fusmyo
+grid.arrange(plot.ridge.erm.wt, plot.ridge.erm.fus, plot.ridge.erm.myo, plot.ridge.erm.fusmyo, ncol=2)
+```
+
+### Ridge Plot cl 4  
+```{r ms erm ridge plot cl 4, fig.cap = "Ridge plot showing distribution of module scores of certain cluster."}
+nclust<- paste0("cca_clusters")
+
+# Sort the based on the nclust, remove duplicates (which is not expected) and assign to clusters 
+clusters <- sort(unique(seurat_object@meta.data[[nclust]]))
+Idents(seurat_object) <-seurat_object@meta.data[[nclust]]
+
+ms.plot.list <- list()
+
+for(i in clusters){
+  seurat.subset.clusters <- subset(seurat_object, idents = i)
+  plot.ridge.loop <- RidgePlot(seurat.subset.clusters, features = "ERM.targets1", group.by = "orig.ident") + ggtitle(i) + theme(legend.position = "none")
+  ms.plot.list[[as.character(i)]] <- plot.ridge.loop
+}  
+
+print(ms.plot.list[["4"]])
+```
+
+
+
+# Let's export the data for violin plots, exchange RNA_snn_res.0.5 with cca_clusters
+ms.seurat.violin.data <- seurat_object[[c("orig.ident", "cca_clusters", "ERM.targets1")]]
+ms.violin.plot.list <- list()
+
+# Make a loop
+for (i in samples) {
+  ms.plot.data <- ms.seurat.violin.data %>%
+    filter(orig.ident == i, cca_clusters == 16)
+  
+  ms.violin.plot <- ggplot(ms.plot.data, aes(x = ERM.targets1, y = 1, fill = ERM.targets1)) +
+    geom_violin(scale = "count", draw_quantiles = c(0.25, 0.5, 0.75)) +
+    labs(title = paste0("MS of cl 16 in ", i)) +
+    coord_flip()
+  
+  ms.violin.plot.list[[i]] <- ms.violin.plot
+}
+
+plot.ms.violin <- do.call(gridExtra::grid.arrange, ms.violin.plot.list)
+
+
+```
+
+
+## Correlation matrix of Fus targest, Erm targets, and cluster 16 markers  {.tabset .tabset-fade .tabset-pills}  
+```{r corr matrix targets, message=FALSE}
+## Correlation based on FUS + ERM targets + cl 16 Markers
+ms.all.goi <- unique(c(ms.fus.targets.filt, ms.erm.intersect, "Etv5", "Ache", "Chrne", "Musk"))
+ms.avg.mat <- AggregateExpression(seurat_object, features = ms.all.goi)[["RNA"]] #counts, try normalized slot
+ms.cor.mat <- cor(t(as.matrix(ms.avg.mat))) #, method = "spearman")
+
+
+pdf("CorrelationHeatmap_FUS_ERM_GOI_betweenCluster_new.pdf")
+Heatmap(ms.cor.mat,row_names_gp = gpar(fontsize = 0.5),column_names_gp = gpar(fontsize = 0.5), col = colorRamp2(c(min(ms.cor.mat), 0, max(ms.cor.mat)),c("blue", "white", "red")))
+dev.off()
+
+ms.corr <- rownames(ms.cor.mat[ms.cor.mat[,"Chrne"] > 0.8 | ms.cor.mat[,"Etv5"] > 0.7,])
+ms.corr
+# rownames(ms.cor.mat[ms.cor.mat[,"Etv5"] > 0.7,])
+# rownames(ms.cor.mat[ms.cor.mat[,"Chrne"] > 0.8,])
+# rownames(ms.cor.mat[ms.cor.mat[,"Ache"] > 0.8,])
+
+## Selecting FUS+ERM+Markers targets from DE-genes
+ms.tmp <- seurat.markers[seurat.markers$gene %in% ms.all.goi,]
+ms.tmp
+ms.tmp16 <- ms.tmp[grepl("16", ms.tmp$cluster),]
+ms.tmp16
+```
+
+
+
+  
+## Transcription factor activity CollecTRI  
+The CollecTRI-derived regulons contain signed transcription factor (TF) - target gene interactions compiled from 12 different resources. This collection provides an increased coverage of transcription factors and was benchmarked against other known GRNs, showing a superior performance in identifying perturbed TFs based on gene expression data using the knockTF data sets.
+I tried univariate linear model (ulm) and multivariate linear model (mlm). 
+```{r collectri, warning=FALSE}
+library(decoupleR)
+library(OmnipathR)
+collectri <- decoupleR::get_collectri(organism = "mouse", split_complexes = FALSE)
+collectri.fus <- collectri %>% filter(source == "Fus") 
+collectri.etv <- collectri %>% filter(source == "Etv5")
+collectri.fus
+head(collectri)
+collectri.etv6 <- collectri %>% filter(source == "Etv6")
+collectri.etv6$target
+
+# activity inference with Weighted Mean
+# Extract the normalized log-transformed counts
+
+# # make matrices
+# mat.all <- as.matrix(seurat_object[["RNA"]]$data)
+# saveRDS(mat.all, "matrix_for_collectri.rds")
+
+
+#check expression of some of the Fus targets, Klk are also known as Efgbp something or mGk
+VlnPlot(seurat_object, features = c("Klk1b9", "Klk1b22", "Klk1", "Klk1b3", "Mdm2", "Sp1", "Ar", "Ddit3", "Egfbp1"), pt.size = 0, stack = T, flip = T , slot = "counts")
+```
+
+
+
+### Run ulm {.tabset .tabset-fade .tabset-pills}
+```{r ulm}
+# acts.ulm <- run_ulm(mat=mat, net=collectri, .source='source', .target='target', .mor='mor', minsize = 2) #I had to run this on server, too computationally difficult
+
+# 
+# # load ulm
+# acts.ulm.wt <- readRDS("../acts_ulm_wt.rds")
+# acts.ulm.fus <- readRDS("../acts_ulm_fus.rds")
+# acts.ulm.myo <- readRDS("../acts_ulm_myo.rds")
+# acts.ulm.fusmyo <- readRDS("../acts_ulm_fusmyo.rds")
+
+acts.ulm <- readRDS("../acts_ulm.rds")
+acts.ulm
+
+# Extract ulm and store it in tfsulm in seurat_object
+seurat_object[['tfsulm']] <- acts.ulm %>%
+  pivot_wider(id_cols = 'source', names_from = 'condition',
+              values_from = 'score') %>%
+  column_to_rownames('source') %>%
+  Seurat::CreateAssayObject(.)
+
+# Change assay
+DefaultAssay(object = seurat_object) <- "tfsulm"
+
+# Scale the data
+seurat_object <- ScaleData(seurat_object)
+seurat_object@assays$tfsulm@data <- seurat_object@assays$tfsulm@scale.data
+
+seurat.subset <- SplitObject(seurat_object, split.by = "orig.ident")
+```
+
+#### WT
+```{r ulm wt}
+## WT
+
+#Fus
+p1 <- (FeaturePlot(seurat.subset$WT, reduction = "umap.cca", features = c("Fus")) & 
+  scale_colour_gradient2(low = 'blue', mid = 'white', high = 'red')) +
+  ggtitle('WT: Fus activity')
+DefaultAssay(object = seurat.subset$WT) <- "RNA"
+p2 <- FeaturePlot(seurat.subset$WT, reduction = "umap.cca", features = c("Fus")) + ggtitle('Fus expression')
+DefaultAssay(object = seurat.subset$WT) <- "tfsulm"
+p1 | p2
+
+
+#Etv5
+p1 <- (FeaturePlot(seurat.subset$WT, reduction = "umap.cca", features = c("Etv5")) & 
+  scale_colour_gradient2(low = 'blue', mid = 'white', high = 'red')) +
+  ggtitle('WT: Etv5 activity')
+DefaultAssay(object = seurat.subset$WT) <- "RNA"
+p2 <- FeaturePlot(seurat.subset$WT, reduction = "umap.cca", features = c("Etv5")) + ggtitle('Etv5 expression')
+DefaultAssay(object = seurat.subset$WT) <- "tfsulm"
+p1 | p2
+
+
+### Heatmap
+# to study the mean activity per group of the top 25 more variable TFs
+n_tfs <- 50
+# Extract activities from object as a long dataframe
+df <- t(as.matrix(seurat.subset$WT@assays$tfsulm@data)) %>%
+  as.data.frame() %>%
+  mutate(cluster = Idents(seurat.subset$WT)) %>%
+  pivot_longer(cols = -cluster, names_to = "source", values_to = "score") %>%
+  group_by(cluster, source) %>%
+  summarise(mean = mean(score))
+
+# Get top tfs with more variable means across clusters
+tfs <- df %>%
+  group_by(source) %>%
+  summarise(std = sd(mean)) %>%
+  arrange(-abs(std)) %>%
+  head(n_tfs) %>%
+  pull(source)
+
+# Subset long data frame to top tfs and transform to wide matrix
+top_acts_mat <- df %>%
+  filter(source %in% tfs) %>%
+  pivot_wider(id_cols = 'cluster', names_from = 'source',
+              values_from = 'mean') %>%
+  column_to_rownames('cluster') %>%
+  as.matrix()
+
+# Choose color palette
+palette_length = 100
+my_color = colorRampPalette(c("red4", "white","turquoise4"))(palette_length)
+
+my_breaks <- c(seq(-3, 0, length.out=ceiling(palette_length/2) + 1),
+               seq(0.05, 3, length.out=floor(palette_length/2)))
+
+# Plot
+pheatmap(top_acts_mat, border_color = NA, color=my_color, breaks = my_breaks) + ggtitle("WT")
+
+# #heatmap with only Etv
+# top_acts_etv <- df %>%
+#   filter(source %in% c("Etv1", "Etv3", "Etv4", "Etv5", "Etv6")) %>%
+#   as.matrix()
+# pheatmap(top_acts_etv, border_color = NA, color=my_color, breaks = my_breaks) + ggtitle("WT")
+
+
+VlnPlot(seurat.subset$WT, features = "Myc", assay = "RNA", pt.size = 0.1)
+VlnPlot(seurat.subset$WT, features = "Myc", assay = "tfsulm", pt.size = 0.1)
+
+VlnPlot(seurat.subset$WT, features = "Smad3", assay = "RNA", pt.size = 0.1)
+VlnPlot(seurat.subset$WT, features = "Smad3", assay = "tfsulm", pt.size = 0.1)
+
+VlnPlot(seurat.subset$WT, features = "Etv5", assay = "RNA", pt.size = 0.1)
+VlnPlot(seurat.subset$WT, features = "Etv5", assay = "tfsulm", pt.size = 0.1)
+
+
+VlnPlot(seurat.subset$WT, features = "Etv5", pt.size = 0) + ggtitle("WT: Etv5 activity")
+DefaultAssay(object = seurat.subset$WT) <- "RNA"
+VlnPlot(seurat.subset$WT, features = "Etv5", pt.size = 0) + ggtitle("WT: Etv5 expression")
+DefaultAssay(object = seurat.subset$WT) <- "tfsmlm"
+
+#check what genes are present in the collectri tfsulm assay
+
+TF.WT <- seurat.subset$WT@assays$tfsulm@counts@Dimnames[[1]]
+"Etv5" %in% TF.WT
+"Fus" %in% TF.WT
+
+TF.Fus <- seurat.subset$FusdNLS@assays$tfsulm@counts@Dimnames[[1]]
+"Etv5" %in% TF.WT
+"Fus" %in% TF.Fus
+
+TF.FusMyo <- seurat.subset$FusdNLS_MyoDicre@assays$tfsulm@counts@Dimnames[[1]]
+"Etv5" %in% TF.WT
+"Fus" %in% TF.FusMyo
+
+TF.Myo <- seurat.subset$MyoDicre@assays$tfsulm@counts@Dimnames[[1]]
+"Etv5" %in% TF.WT
+"Fus" %in% TF.Myo
+
+# source <- acts.ulm$source
+# "Fus" %in% source
+
+DefaultAssay(object = seurat.subset$WT) <- "tfsmlm"
+deg.clusterFAPS <- FindMarkers(seurat_object, ident.1 = "FusdNLS", ident.2 = "WT", group.by = "orig.ident", subset.ident = 16 ,verbose = TRUE, logfc.threshold = 0.25)
+
+# Filter for significant DEG, genes with a p-value adjusted below 0.05"
+  deg.filt16.4<-deg.cluster16.4 %>%
+            filter(p_val_adj < 0.05)
+```
+
+#### FusdNLS
+```{r ulm fus}
+## FusdNLS
+#Fus
+p1 <- (FeaturePlot(seurat.subset$FusdNLS, reduction = "umap.cca", features = c("Fus")) & 
+  scale_colour_gradient2(low = 'blue', mid = 'white', high = 'red')) +
+  ggtitle('FusdNLS: Fus activity')
+DefaultAssay(object = seurat.subset$FusdNLS) <- "RNA"
+p2 <- FeaturePlot(seurat.subset$FusdNLS, reduction = "umap.cca", features = c("Fus")) + ggtitle('Fus expression')
+DefaultAssay(object = seurat.subset$FusdNLS) <- "tfsulm"
+p1 | p2
+
+
+#Etv5
+p1 <- (FeaturePlot(seurat.subset$FusdNLS, reduction = "umap.cca", features = c("Etv5")) & 
+  scale_colour_gradient2(low = 'blue', mid = 'white', high = 'red')) +
+  ggtitle('FusdNLS: Etv5 activity')
+DefaultAssay(object = seurat.subset$FusdNLS) <- "RNA"
+p2 <- FeaturePlot(seurat.subset$FusdNLS, reduction = "umap.cca", features = c("Etv5")) + ggtitle('Etv5 expression')
+DefaultAssay(object = seurat.subset$FusdNLS) <- "tfsulm"
+p1 | p2
+
+### Heatmap
+# to study the mean activity per group of the top 25 more variable TFs
+n_tfs <- 25
+# Extract activities from object as a long dataframe
+df <- t(as.matrix(seurat.subset$FusdNLS@assays$tfsulm@data)) %>%
+  as.data.frame() %>%
+  mutate(cluster = Idents(seurat.subset$FusdNLS)) %>%
+  pivot_longer(cols = -cluster, names_to = "source", values_to = "score") %>%
+  group_by(cluster, source) %>%
+  summarise(mean = mean(score))
+
+# Get top tfs with more variable means across clusters
+tfs <- df %>%
+  group_by(source) %>%
+  summarise(std = sd(mean)) %>%
+  arrange(-abs(std)) %>%
+  head(n_tfs) %>%
+  pull(source)
+
+# Subset long data frame to top tfs and transform to wide matrix
+top_acts_mat <- df %>%
+  filter(source %in% tfs) %>%
+  pivot_wider(id_cols = 'cluster', names_from = 'source',
+              values_from = 'mean') %>%
+  column_to_rownames('cluster') %>%
+  as.matrix()
+
+# Choose color palette
+palette_length = 100
+my_color = colorRampPalette(c("red4", "white","turquoise4"))(palette_length)
+
+my_breaks <- c(seq(-3, 0, length.out=ceiling(palette_length/2) + 1),
+               seq(0.05, 3, length.out=floor(palette_length/2)))
+
+# Plot
+pheatmap(top_acts_mat, border_color = NA, color=my_color, breaks = my_breaks) + ggtitle("WT") 
+```
+
+#### MyoDicre
+```{r ulm myo}
+## MyoDicre
+
+#Fus
+p1 <- (FeaturePlot(seurat.subset$MyoDicre, reduction = "umap.cca", features = c("Fus")) & 
+  scale_colour_gradient2(low = 'blue', mid = 'white', high = 'red')) +
+  ggtitle('MyoDicre: Fus activity')
+DefaultAssay(object = seurat.subset$MyoDicre) <- "RNA"
+p2 <- FeaturePlot(seurat.subset$MyoDicre, reduction = "umap.cca", features = c("Fus")) + ggtitle('Fus expression')
+DefaultAssay(object = seurat.subset$MyoDicre) <- "tfsulm"
+p1 | p2
+
+
+#Etv5
+p1 <- (FeaturePlot(seurat.subset$MyoDicre, reduction = "umap.cca", features = c("Etv5")) & 
+  scale_colour_gradient2(low = 'blue', mid = 'white', high = 'red')) +
+  ggtitle('MyoDicre: Etv5 activity')
+DefaultAssay(object = seurat.subset$MyoDicre) <- "RNA"
+p2 <- FeaturePlot(seurat.subset$MyoDicre, reduction = "umap.cca", features = c("Etv5")) + ggtitle('Etv5 expression')
+DefaultAssay(object = seurat.subset$MyoDicre) <- "tfsulm"
+p1 | p2
+
+
+### Heatmap
+# to study the mean activity per group of the top 25 more variable TFs
+n_tfs <- 25
+# Extract activities from object as a long dataframe
+df <- t(as.matrix(seurat.subset$MyoDicre@assays$tfsulm@data)) %>%
+  as.data.frame() %>%
+  mutate(cluster = Idents(seurat.subset$MyoDicre)) %>%
+  pivot_longer(cols = -cluster, names_to = "source", values_to = "score") %>%
+  group_by(cluster, source) %>%
+  summarise(mean = mean(score))
+
+# Get top tfs with more variable means across clusters
+tfs <- df %>%
+  group_by(source) %>%
+  summarise(std = sd(mean)) %>%
+  arrange(-abs(std)) %>%
+  head(n_tfs) %>%
+  pull(source)
+
+# Subset long data frame to top tfs and transform to wide matrix
+top_acts_mat <- df %>%
+  filter(source %in% tfs) %>%
+  pivot_wider(id_cols = 'cluster', names_from = 'source',
+              values_from = 'mean') %>%
+  column_to_rownames('cluster') %>%
+  as.matrix()
+
+# Choose color palette
+palette_length = 100
+my_color = colorRampPalette(c("red4", "white","turquoise4"))(palette_length)
+
+my_breaks <- c(seq(-3, 0, length.out=ceiling(palette_length/2) + 1),
+               seq(0.05, 3, length.out=floor(palette_length/2)))
+
+# Plot
+pheatmap(top_acts_mat, border_color = NA, color=my_color, breaks = my_breaks)
+```
+
+#### FusdNLS_MyoDicre
+```{r ulm fusmyo}
+## MyoDicre
+#Fus
+p1 <- (FeaturePlot(seurat.subset$FusdNLS_MyoDicre, reduction = "umap.cca", features = c("Fus")) & 
+  scale_colour_gradient2(low = 'blue', mid = 'white', high = 'red')) +
+  ggtitle('FusMyo: Fus activity')
+DefaultAssay(object = seurat.subset$FusdNLS_MyoDicre) <- "RNA"
+p2 <- FeaturePlot(seurat.subset$FusdNLS_MyoDicre, reduction = "umap.cca", features = c("Fus")) + ggtitle('Fus expression')
+DefaultAssay(object = seurat.subset$FusdNLS_MyoDicre) <- "tfsulm"
+p1 | p2
+
+
+#Etv5
+p1 <- (FeaturePlot(seurat.subset$FusdNLS_MyoDicre, reduction = "umap.cca", features = c("Etv5")) & 
+  scale_colour_gradient2(low = 'blue', mid = 'white', high = 'red')) +
+  ggtitle('FusMyo: Etv5 activity')
+DefaultAssay(object = seurat.subset$FusdNLS_MyoDicre) <- "RNA"
+p2 <- FeaturePlot(seurat.subset$FusdNLS_MyoDicre, reduction = "umap.cca", features = c("Etv5")) + ggtitle('Etv5 expression')
+DefaultAssay(object = seurat.subset$FusdNLS_MyoDicre) <- "tfsulm"
+p1 | p2
+
+
+### Heatmap
+# to study the mean activity per group of the top 25 more variable TFs
+n_tfs <- 25
+# Extract activities from object as a long dataframe
+df <- t(as.matrix(seurat.subset$FusdNLS_MyoDicre@assays$tfsulm@data)) %>%
+  as.data.frame() %>%
+  mutate(cluster = Idents(seurat.subset$FusdNLS_MyoDicre)) %>%
+  pivot_longer(cols = -cluster, names_to = "source", values_to = "score") %>%
+  group_by(cluster, source) %>%
+  summarise(mean = mean(score))
+
+# Get top tfs with more variable means across clusters
+tfs <- df %>%
+  group_by(source) %>%
+  summarise(std = sd(mean)) %>%
+  arrange(-abs(std)) %>%
+  head(n_tfs) %>%
+  pull(source)
+
+# Subset long data frame to top tfs and transform to wide matrix
+top_acts_mat <- df %>%
+  filter(source %in% tfs) %>%
+  pivot_wider(id_cols = 'cluster', names_from = 'source',
+              values_from = 'mean') %>%
+  column_to_rownames('cluster') %>%
+  as.matrix()
+
+# Choose color palette
+palette_length = 100
+my_color = colorRampPalette(c("red4", "white","turquoise4"))(palette_length)
+
+my_breaks <- c(seq(-3, 0, length.out=ceiling(palette_length/2) + 1),
+               seq(0.05, 3, length.out=floor(palette_length/2)))
+
+# Plot
+pheatmap(top_acts_mat, border_color = NA, color=my_color, breaks = my_breaks)
+rm(seurat.subset)
+```
+
+
+
+# Session info
+```{r session info}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
