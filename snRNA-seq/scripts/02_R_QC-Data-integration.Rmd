@@ -31,3 +31,421 @@ library(Matrix)
 library(cowplot) #needed for background_grid
 library(kableExtra)
 ```
+## Load the data and create a seurat object
+
+Check the parameters of the Seurat object without any parameters first. Load the data directory in cellranger directory '/sample/outs/feature_bc_barcode/'. You can choose filtered or non
+filtered
+
+```{r loading datasets}
+#loading data from the server
+data_dir <- "//molbio-srv.science.ru.nl/path/to/snRNA_IRP/"
+
+# Load the datasets
+WT <- Read10X(data.dir = paste0(data_dir, "wt/wt_merge_trimApril_june/outs/filtered_feature_bc_matrix/"))
+MyoDicre <- Read10X(data.dir = paste0(data_dir, "230419_AHVLNYBGXN_MyoDicre_wt/MyoDicre_demultiplexed4indices/outs/filtered_feature_bc_matrix/"))
+FusdNLS <- Read10X(data.dir = paste0(data_dir, "Fus/Fus_all_demultiplexed/outs/filtered_feature_bc_matrix/"))
+FusdNLS_MyoDicre <- Read10X(data.dir = paste0(data_dir, "Fus-MyoDicre/Fus-MyoDicre_all_demultiplexed/outs/filtered_feature_bc_matrix/"))
+
+WT <- CreateSeuratObject(counts = WT, project = "WT", min.cells = 3, min.features = 200)
+MyoDicre <- CreateSeuratObject(counts = MyoDicre, project = "MyoDicre", min.cells = 3, min.features = 200)
+FusdNLS <- CreateSeuratObject(counts = FusdNLS, project = "FusdNLS", min.cells = 3, min.features = 200)
+FusdNLS_MyoDicre <- CreateSeuratObject(counts = FusdNLS_MyoDicre, project = "FusdNLS_MyoDicre", min.cells = 3, min.features = 200)
+
+#merge all samples in one seurat_object, passing one dataset in x and the rest as a list in y
+seurat_object <- merge(x = WT, y = c(MyoDicre, FusdNLS, FusdNLS_MyoDicre), add.cell.ids = c("WT", "MyoDicre", "FusdNLS", "FusdNLS_MyoDicre"))
+
+rownames(seurat_object)[1:5]
+
+```
+
+# QC, filtering and normalization
+
+Seurat allows you to easily explore QC metrics and filter cells based on any user-defined criteria. A few QC metrics commonly used by the community include 
+-- The number of unique genes detected in each cell.
+-- Low-quality cells or empty droplets will often have very few genes
+-- Cell doublets or multiplets may exhibit an aberrantly high gene count
+-- Similarly, the total number of molecules detected within a cell (correlates strongly with unique genes)
+
+```{r QC metrics}
+# Show QC metrics for the first 5 nuclei
+head(seurat_object@meta.data, 5)
+# On left are the barcodes, nCount_RNA is the total number of molecules detected within a droplet using exonic and intronic sequences , nFeature_RNA is the number of detected genes in each droplet using exonic and intronic sequences. 
+```
+
+## Visualize number of detected genes and RNA counts
+
+nFeature_RNA (Number of Detected Genes): This metric represents the number of unique genes that were detected in a single cell. It gives you an idea of the diversity of genes that are expressed in a cell. Cells with a higher nFeature_RNA value typically indicate greater transcriptional complexity, which can be a sign of a healthy and functional cell. Conversely, cells with a very low nFeature_RNA value may be low-quality or potentially damaged cells.
+
+nCount_RNA (Total RNA Counts): This metric represents the total number of RNA molecules (or reads) that were detected in a single cell. It provides a measure of the total RNA content of a cell. Cells with a higher nCount_RNA value may have more RNA content, which can be related to factors such as cell size or metabolic activity. Extremely high or low nCount_RNA values can be indicative of potential issues or outliers.
+
+```{r violinplot, fig.cap = "The violinplot shows the gene count distribution of the nuclei. Features: number of genes detected in each nuclei. nCount: total number or molecules detected."}
+# Visualize QC metrics as a violin plot of the features for each sample
+plot.violin1 <- VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0) + background_grid(major = ("xy"), minor = ("y"))
+plot.violin1
+
+plot.violin2 <- VlnPlot(seurat_object, features = c("nCount_RNA"), ncol = 1, pt.size = 0) + background_grid(major = ("xy"), minor = ("y"))
+plot.violin2
+
+```
+
+
+## Visualize feature-nCount relationship
+
+0.97 denotes the correlations between x-axis and y-axis, namely the number of molecules and number of genes in a nuclei.
+
+```{r feature-scatter}
+plot.f_f <- FeatureScatter(seurat_object, feature1 = "nCount_RNA", feature2 = "nFeature_RNA", group.by = "orig.ident")
+plot.f_f
+
+#make a subset of orig.ident to make your life easier
+seurat.subset <- SplitObject(seurat_object, split.by = "orig.ident")
+plot.f_f.wt <- FeatureScatter(seurat.subset$WT, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot.f_f.fus <- FeatureScatter(seurat.subset$FusdNLS, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot.f_f.myo <- FeatureScatter(seurat.subset$MyoDicre, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+plot.f_f.fusmyo <- FeatureScatter(seurat.subset$FusdNLS_MyoDicre, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+
+plot.f_f.wt + plot.f_f.fus + plot.f_f.myo + plot.f_f.fusmyo
+
+```
+
+## Density plots {.tabset .tabset-fade .tabset-pills}
+
+These plots show number of genes or molecules (UMI counts) per nuclei
+
+``` {r densityplot, message=FALSE}
+# In order to make a distribution plot for the number of features in nuclei, we need to retrieve specific values from the metadata 
+
+density.so <- seurat_object[[c("orig.ident", "nCount_RNA", "nFeature_RNA")]]
+
+density.so.df <- as.data.frame(density.so)
+colnames(density.so.df) <- c("orig.ident", "count", "feature")
+
+
+#Prepare the df for loop
+density.wt<- density.so.df %>%
+  filter(orig.ident == "WT")
+density.myodicre <- density.so.df %>%
+  filter(orig.ident == "MyoDicre")
+density.fus <- density.so.df %>%
+  filter(orig.ident == "FusdNLS")
+density.fusmyodicre <- density.so.df %>%
+  filter(orig.ident == "FusdNLS_MyoDicre")
+
+#the loop
+density.dfs <- c("density.wt", "density.myodicre", "density.fus", "density.fusmyodicre")
+```
+
+
+### density features
+```{r density features, fig.cap="number of genes per nuclei"}
+density.plot.list <- list()
+
+#loop for features
+for (i in density.dfs) {
+  df <- get(i)
+  densityplot <- ggplot(df, aes(x = feature), group_by = orig.ident) + geom_density() + labs(title = paste(i, "of features"))
+  density.plot.list[[i]] <- densityplot
+}  
+
+combined_plot <- density.plot.list$density.wt + density.plot.list$density.myodicre + density.plot.list$density.fus + density.plot.list$density.fusmyodicre
+print(combined_plot)  
+```
+
+### density UMI counts
+```{r density counts, fig.cap="number of molecules (UMI counts) per nuclei"}
+#loop for counts
+density.plot.list.c <- list()
+
+for (i in density.dfs) {
+  df <- get(i)
+  densityplotc <- ggplot(df, aes(x = count)) + geom_density() + labs(title = paste(i, "of UMI counts"))
+  density.plot.list.c[[i]] <- densityplotc
+}  
+
+density.combined.plot.counts <- density.plot.list.c$density.wt + density.plot.list.c$density.myodicre + density.plot.list.c$density.fus + density.plot.list.c$density.fusmyodicre
+print(density.combined.plot.counts)
+
+```
+
+### density histograms
+```{r density histograms}
+
+#start of the loop
+density.hists <- c("density.wt", "density.myodicre", "density.fus", "density.fusmyodicre")
+density.hist.list <- list()
+
+#loop for histograms
+for (i in density.hists) {
+  hst <- get(i)
+  histogram <- ggplot(hst, aes(x = feature), group_by = orig.ident) + geom_histogram(color="darkblue", fill="white", binwidth = 1) +
+  geom_vline(xintercept = c(650, 2500), color="red", linetype= 2, linewidth = 0.2) + labs(title = paste("Histogram of", i))
+  density.hist.list[[i]] <- histogram
+}  
+
+density.combined.hist <- density.hist.list$density.wt + density.hist.list$density.myodicre + density.hist.list$density.fus + density.hist.list$density.fusmyodicre
+print(density.combined.hist)
+```
+
+### density features overlay plot
+In the figure below you can see the first peaks around 400-800 features.
+ 
+``` {r combination plot, fig.cap = "In red the distribution of the wild type nuclei is shown. In blue the distribution of the MyoDicre nuclei is shown."}
+# Overlay plot of the distribution plots 
+plot.dens1 <- ggplot() +
+  geom_density(data = density.wt ,aes(x = feature, fill = "blue", alpha = 0.4)) +
+  geom_density(data = density.myodicre ,aes(x = feature, fill = "red", alpha = 0.4)) +
+  geom_density(data = density.fus ,aes(x = feature, fill = "seagreen4", alpha = 0.4)) +
+  geom_density(data = density.fusmyodicre ,aes(x = feature, fill = "yellow", alpha = 0.4)) + scale_fill_discrete(name = "Sample", labels = c("WT", "MyoDicre", "FusdNLS", "FusdNLS_MyoDicre")) + geom_vline(xintercept = c(650, 2500), color = "red", linewidth = 0.2, linetype = "longdash") 
+plot.dens1 
+```
+
+### density counts overlay plot
+In the figure below the number of molecules in droplets can be observed that the wt sample has many droplets with 200 and ~2750 molecules. The graph show a distribution of nuclei within a sample, you cannot make conclusions about the precise number of nuclei. 
+
+```{r densityplot2, fig.cap = "In red the distribution of the wild type nuclei is shown. In blue the distribution of the MyoDicre nuclei is shown."}
+plot.dens2 <- ggplot() +
+  geom_density(data = density.wt ,aes(x = count, fill ="blue", alpha = 0.4)) +
+  geom_density(data = density.myodicre ,aes(x = count, fill = "red", alpha = 0.4)) + 
+  geom_density(data = density.fus ,aes(x = feature, fill = "seagreen4", alpha = 0.4)) +
+  geom_density(data = density.fusmyodicre ,aes(x = feature, fill = "yellow", alpha = 0.4)) + scale_fill_discrete(name = "Sample", labels = c("WT", "MyoDicre", "FusdNLS", "FusdNLS_MyoDicre")) 
+plot.dens2
+```
+
+## Filter the data
+
+Take nuclei with a feature number 200/650 and <2500, decide whether proceed with lower bar 200 or 650
+
+```{r violinplot with thresholds}
+plot.violin3 <- VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0.0001) + background_grid(major = ("xy"), minor = ("y")) + theme(axis.text.x = element_blank()) + geom_hline(yintercept = c(650, 2800), color = "red", linewidth = 0.2)
+plot.violin3
+
+plot.violin4 <- VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0) + background_grid(major = ("xy"), minor = ("y")) + theme(axis.text.x = element_blank()) + geom_hline(yintercept = c(650, 2800), color = "red", linewidth = 0.2)
+plot.violin4
+```
+
+```{r filtering}
+seurat_object <- subset(seurat_object, subset = nFeature_RNA > 650 & nFeature_RNA < 2800) 
+
+#save the filtered object (or maybe not, I want to normalize the data in one file)
+#save(seurat_object, file="~/.../QC_filtered_seurat_object")
+```
+
+### Violinplots after selection
+
+The violinplot shows the gene count distribution of nuclei after filtering. 
+
+```{r violinplot after filtering}
+plot.violin5 <- VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0.0001) + background_grid(major = ("xy"), minor = ("y"))
+plot.violin5
+
+plot.violin6 <-  VlnPlot(seurat_object, features = c("nFeature_RNA"), ncol = 1, pt.size = 0) + background_grid(major = ("xy"), minor = ("y"))
+plot.violin6
+```
+
+## Dimensions/Nuclei count of the samples in the object
+
+Nuclei count prior the removal of nuclei containing mitochondrial gene transcripts.
+Establishing samples variable.
+
+```{r dimensions}
+#I am using variable samples many times further on
+samples <- c("WT", "MyoDicre", "FusdNLS", "FusdNLS_MyoDicre")
+
+for (i in seq_along(samples)) {
+  print(paste("Nuclei count of", samples[[i]], "dataset"))
+  print(dim(subset(x = seurat_object, subset = orig.ident == (paste(samples[[i]])))))
+}
+
+```
+
+## Normalize the data
+
+```{r norm, message=FALSE}
+seurat_object <- NormalizeData(seurat_object, normalization.method = "LogNormalize", scale.factor = 10000)
+```
+
+## Identification of highly variable genes (feature selection)
+
+```{r var features, message=FALSE}
+seurat_object <- FindVariableFeatures(seurat_object, selection.method = "vst", nfeatures = 2000)
+```
+
+Identify top 10 most variable genes. The plot identifies features that are outliers on a 'vst' or 'mean variability plot'. 
+This function computes a score for each gene to select the 2000 bests for the next step, the PCA.
+For a gene, the more variability in the counts matrix for each cells the better. For each gene they compute the mean and variance of not normalized UMI and apply log10 for var and mean
+
+```{r volcano, message=FALSE}
+top10 <- head(VariableFeatures(seurat_object), 10)
+top10
+
+plot.volcano.wo.labels <- VariableFeaturePlot(seurat_object)
+plot.volcano.labels <- LabelPoints(plot = plot.volcano.wo.labels, points = top10, repel = TRUE)
+plot.volcano.wo.labels
+plot.volcano.labels
+```
+
+## Scaling the data
+
+Applies linear transformation that is a standard pre-processing step prior to dimensional reduction techniques like PCA. The ScaleData() function: Shifts and scales the expression of each gene, so that the mean expression across cells is 0 and variance is 1.  
+This step gives equal weight in downstream analyses, so that highly-expressed genes do not dominate.  
+Takes a bit of time and some memory usage
+
+```{r scaling, message=FALSE}
+all.genes <- rownames(seurat_object)
+seurat_object <- ScaleData(seurat_object, features = all.genes)
+```
+
+# Dimensional reductions
+
+## Linear dimensional reduction (PCA)
+
+Perform PCA on scaled data and shows genes which have positive/negative principal component scores. 
+Principal component analysis, or PCA, is a dimensionality reduction method to reduce the dimensionality of large data sets, by transforming a large set of variables into a smaller one that still contains most of the information in the large set.
+PCA reduces the number of variables of a data set, while preserving as much information as possible.
+
+```{r pca, message=FALSE}
+seurat_object <- RunPCA(seurat_object, features = VariableFeatures(object=seurat_object))
+print(seurat_object[["pca"]], dims=1:5, nfeatures=5)
+VizDimLoadings(seurat_object, dims=1:2, reduction="pca")
+
+DimPlot(seurat_object, reduction = "pca")
+
+#save(seurat_object, file = "seurat_object.pca")
+```
+
+### Heatmaps - to visualize linear dimensional reduction
+
+DimHeatmap() explore the primary sources of heterogeneity in a dataset. Can be useful when trying to decide which PCs to include for further downstream analyses. Both cells and features are ordered according to their PCA scores. 
+
+```{r heatmaps, message=FALSE}
+DimHeatmap(seurat_object, dims=1, cells=500, balanced = TRUE)
+
+DimHeatmap(seurat_object, dims=1:21, cells=500, balanced = TRUE)
+```
+
+### Determine the 'dimensionality' of the dataset
+
+To overcome the extensive technical noise in any single feature for scRNA-seq data, Seurat clusters cells based on their PCA scores. The top principal components therefore represent a robust compression of the dataset.
+However it is challenging to choose how many components to include.
+An alternative heuristic method generates an 'Elbow plot'. 
+
+```{r elbowplot, message=FALSE}
+ElbowPlot(seurat_object)
+```
+
+Identifying the true dimensionality of a dataset can be challenging/uncertain. 
+
+
+# Cluster the cells
+
+Seurat applies a graph-based clustering approach. Importantly, the distance metric which drives the clustering analysis (based on previously identified PCs) remains the same. 
+To cluster the cells, we apply modularity optimization techniques to iteratively group cells together, with the goal of optimizing the standard modularity function. We find that setting this parameter between 0.4-1.2 typically returns good results for single-cell datasets of around 3K cells. Optimal resolution often increases for larger datasets. 
+The clusters can be found using the Idents() function.
+
+```{r cluster, message=FALSE}
+#the settings here can be changed, let's try dimensions 10, 20, and 30, and four different resolutions
+seurat_object <- FindNeighbors(seurat_object, dims = 1:20, reduction="pca") #specifying reduction was in new data integration
+
+seurat_object <- FindClusters(seurat_object, resolution = 0.5, cluster.name="unintegrated_clusters")
+
+# Look at cluster IDs of the first 5 cells
+head(Idents(seurat_object), 5)
+
+```
+
+
+## UMAP with different resolutions and dimensions {.tabset .tabset-fade .tabset-pills}  
+
+```{r different dimensions and resolutions, message=FALSE}
+# For loop for different dimensionalities.
+dimensions <- c(10,20,30)
+resolutions <- c(0.25, 0.5, 0.75, 1)
+for (i in dimensions ) {
+  # Run FindNeighbors on data.pca with PCs 10,20,30)
+ data.dim <- FindNeighbors(seurat_object, dims = 1:i)
+  # Run FindClusters and see if the data get assigned to the correct Seurat Object.
+  data.dim <- FindClusters(data.dim, resolution = resolutions)
+ assign(paste0("data.",i), data.dim)
+}
+```
+
+### 0.25 res  
+```{r UMAP 0.25 res, message=FALSE}
+data.30 <- RunUMAP(data.30, dims = 1:30)
+DimPlot(data.30, reduction = "umap", group.by = "RNA_snn_res.0.25", label = TRUE)
+```
+
+### 0.5 res  
+```{r UMAP 0.5 res}
+DimPlot(data.30, reduction = "umap", group.by = "RNA_snn_res.0.5", label = TRUE)
+```
+
+### 0.75 res  
+```{r UMAP 0.75 res}
+DimPlot(data.30, reduction = "umap", group.by = "RNA_snn_res.0.75", label = TRUE)
+```
+
+### 1 res  
+```{r UMAP 1 res}
+DimPlot(data.30, reduction = "umap", group.by = "RNA_snn_res.1", label = TRUE)
+```
+
+
+## Clustree
+Based on different resolutions and dimensions computed above, have a look at how the clusters change in different resolutions.
+
+```{r clustree, message=FALSE}
+library(clustree)
+clustree(data.30, prefix = "RNA_snn_res.") + theme(legend.position = "bottom")
+
+
+# clean the space
+rm(data.10, data.20, data.30, data.dim)
+```
+
+
+# Data integration
+
+Seurat offers tSNE and UMAP to visualize and explore these datasets. The goal of these algorithms is to learn the underlying manifold of the data in order to place similar cells together in low-dimensional space. Cells within the graph-based clusters determined above should co-localize on these dimension reduction plots. As input to the UMAP and tSNE, we suggest using the same PCs as input to the clustering analysis.
+
+```{r non-linear reduction, message=FALSE, warning=FALSE}
+seurat_object <- RunUMAP(seurat_object, dims = 1:19, reduction="pca", reduction.name = "umap.unintegrated")
+```
+
+
+```{r data integration, message=FALSE, warning=FALSE}
+seurat_object <- IntegrateLayers(
+  object = seurat_object, method = CCAIntegration,
+  orig.reduction = "pca", new.reduction = "integrated.cca",
+  verbose = FALSE
+)
+```
+
+```{r harmony data integration, message=FALSE, warning=FALSE}
+seurat_object <- IntegrateLayers(
+  object = seurat_object, method = HarmonyIntegration,
+  orig.reduction = "pca", new.reduction = "harmony",
+  verbose = FALSE
+)
+```
+
+## Check nFeature_RNA
+```{r features in UMAP}
+plot.features<- FeaturePlot(seurat_object, features = "nFeature_RNA", pt.size = 0.5)
+plot.features
+
+plot.counts<- FeaturePlot(seurat_object, features = "nCount_RNA", pt.size = 0.5)
+plot.counts
+```
+
+
+# Save the integrated seurat_object
+```{r save the object}
+saveRDS(seurat_object, file = "/path/to/seurat5_int1.rds")
+```
+
+
+# Session info
+```{r session info}
+sessionInfo()
+```
