@@ -12,7 +12,7 @@ output:
     fig_path: figure-html/
 ---
 
-The data integration is a computationally difficult process, therefore is the standard Seurat pipeline split into two parts.
+The data integration is a computationally difficult process, therefore is the standard Seurat QC+clustering pipeline split into two parts.
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -124,7 +124,7 @@ for (i in unique(x=seurat_object$orig.ident)) {
 }
 plot.dimplot.harmony.comb <- grid.arrange(grobs = umap.dimplot.list, ncol=2)
 
-# make a combined plot
+# make a combined plot of features and counts
 #features and counts unintegrated
 plot.features.un <- FeaturePlot(seurat_object, features = "nFeature_RNA", pt.size = 0.5)
 plot.counts.un <- FeaturePlot(seurat_object, features = "nCount_RNA", pt.size = 0.5)
@@ -138,7 +138,7 @@ plot.counts.comb <- grid.arrange(plot.counts.un, plot.features.un, plot.features
 ## UMAP with different resolutions and dimensions {.tabset .tabset-fade .tabset-pills}  
 
 ```{r different dimensions and resolutions, message=FALSE}
-# For loop for different dimensionalities.
+# For loop for different dimensionalities
 dimensions <- c(10,20,30)
 resolutions <- c(0.25, 0.5, 0.75, 1)
 for (i in dimensions ) {
@@ -242,14 +242,10 @@ VlnPlot(seurat_object, features = c("nCount_RNA"), ncol = 1, pt.size = 0, split.
 
 ## Find differentially expressed features
 
-Seurat can help you find markers that define clusters via differential
-expression. By default, it identifies positive and negative markers of a
-single cluster (specified in ident.1), compared to all other cells.
-FindAllMarkers() automates this process for all clusters, but you can
-also test groups of clusters vs. each other, or against all cells.  
+Seurat can find markers that define clusters via differential expression. By default, it identifies positive and negative markers of a single cluster (specified in ident.1), compared to all other cells.
+FindAllMarkers() automates this process for all clusters, but one can also test groups of clusters vs. each other, or against all cells.  
 
 There are three main functions:  
-
 FindMarkers: a versatile tool for identifying marker genes that are differentially expressed between specified cell clusters or groups. It employs a Wilcoxon rank-sum test by default and allows users to customize parameters for significance and log-fold change thresholds. This function is suitable for a wide range of differential expression analysis scenarios in single-cell RNA-seq data, mainly for comparing two groups within one dataset.  
 
 FindAllMarkers: Similarly, it identifies marker genes across all clusters or groups in a Seurat object. It's useful for a comprehensive exploration of marker genes in the entire dataset. Users can specify the method (e.g., Wilcoxon rank-sum test or t-test) and customize parameters for statistical significance.  
@@ -300,9 +296,6 @@ plot.vln.un | plot.vln.cca | plot.vln.harmony
 Idents(seurat_object) <- seurat_object$cca_clusters
 VlnPlot(seurat_object, features = c("Fus"), slot = "counts", log = TRUE, split.by = "orig.ident", idents = 16) + ggtitle("Expression of Fus in cluster 16")
 
-#Dos Santos, Titin + myonuclei identification, no specific cluster here
-#VlnPlot(seurat_object, features = c("Runx1", "Dysf", "Ehd4", "Flnc", "Myh9"), slot = "counts", log = TRUE)
-
 # stack plot
 VlnPlot(seurat_object,features=c("Musk", "Chrne", "Ache", "Fus", "Etv5"), pt.size = 0, stack=T, flip=T)
 
@@ -339,7 +332,6 @@ kable_styling(fixed_thead = T, bootstrap_options = c("striped"," hover")) %>%
 scroll_box(width = "750px", height = "350px")) %>%
 cat("\n")
 ```
-
 
 
 # Study the gene expression
