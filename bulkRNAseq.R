@@ -235,7 +235,7 @@ cclust<-compareCluster(geneCluster = comparelist,
                universe=data.counts.final)
 dotplot(cclust, showCategory = 6, font.size = 10)
 
-# semantics
+# semantics (takes a lot of time)
 GO_ID <- DEgenesGOTable$ID[DEgenesGOTable$p.adjust < 0.1]
 library(simplifyEnrichment)
 simplifyGO(GO_ID)
